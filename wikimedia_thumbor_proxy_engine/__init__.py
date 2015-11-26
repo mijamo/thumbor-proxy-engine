@@ -12,6 +12,7 @@
 # Proxy engine, redirects requests to other engines
 # according to configurable logic
 
+import datetime
 import importlib
 
 from thumbor.engines import BaseEngine
@@ -54,6 +55,8 @@ class Engine(BaseEngine):
 
     # This is our entry point for the proxy, it's the first call to the engine
     def load(self, buffer, extension):
+        object.__setattr__(self, 'start', datetime.datetime.now())
+
         # buffer and extension are needed by select_engine
         object.__setattr__(self, 'extension', extension)
         object.__setattr__(self, 'buffer', buffer)
@@ -87,8 +90,23 @@ class Engine(BaseEngine):
     def image_data_as_rgb(self, update_image=True):
         return self.__getattr__('image_data_as_rgb')(update_image)
 
+    # This is the exit point for requests, where the generated image is
+    # converted to the target format
     def read(self, extension=None, quality=None):
-        return self.__getattr__('read')(extension, quality)
+        ret = self.__getattr__('read')(extension, quality)
+
+        finish = datetime.datetime.now()
+        start = object.__getattribute__(self, 'start')
+        context = object.__getattribute__(self, 'context')
+        engine = getattr(self, 'select_engine')()
+        duration = (finish - start).total_seconds() * 1000
+
+        context.metrics.timing(
+            'engine.process_time.' + engine,
+            duration
+        )
+
+        return ret
 
     def resize(self, width, height):
         return self.__getattr__('resize')(width, height)
