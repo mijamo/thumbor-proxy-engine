@@ -63,6 +63,9 @@ class Engine(BaseEngine):
 
         # Now that we'll select the right engine, let's initialize it
         context = object.__getattribute__(self, 'context')
+        engine = getattr(self, 'select_engine')()
+        context.request_handler.set_header('Engine', engine)
+
         super(Engine, self).__init__(context)
         super(Engine, self).load(buffer, extension)
 
