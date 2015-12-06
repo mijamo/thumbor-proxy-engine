@@ -22,8 +22,13 @@ class Engine(BaseEngine):
     def __init__(self, context):
         engines = context.config.PROXY_ENGINE_ENGINES
 
-        object.__setattr__(self, 'context', context)
-        object.__setattr__(self, 'engines', engines)
+        # Create an object that will store local values
+        # Setting it this way avoids hitting the __setattr__
+        # proxying
+        super(Engine, self).__setattr__('lcl', {})
+
+        self.lcl['context'] = context
+        self.lcl['engines'] = engines
 
         for engine in engines:
             self.init_engine(context, engine)
@@ -31,17 +36,17 @@ class Engine(BaseEngine):
     def init_engine(self, context, module):
         mod = importlib.import_module(module)
         klass = getattr(mod, 'Engine')
-        object.__setattr__(self, module, klass(context))
+
+        self.lcl[module] = klass(context)
 
     def select_engine(self):
-        buffer = object.__getattribute__(self, 'buffer')
-        extension = object.__getattribute__(self, 'extension')
-        engines = object.__getattribute__(self, 'engines')
-
-        for enginename in engines:
-            engine = object.__getattribute__(self, enginename)
+        for enginename in self.lcl['engines']:
+            engine = self.lcl[enginename]
             try:
-                if engine.should_run(extension, buffer):
+                if engine.should_run(
+                    self.lcl['extension'],
+                    self.lcl['buffer']
+                ):
                     return enginename
 
             # Not implementing should_run means that the engine
@@ -51,39 +56,40 @@ class Engine(BaseEngine):
             except AttributeError:
                 return enginename
 
-        raise Exception('Unable to find a suitable engine, tried %r' % engines)
+        raise Exception(
+            'Unable to find a suitable engine, tried %r' % self.lcl['engines']
+        )
 
     # This is our entry point for the proxy, it's the first call to the engine
     def load(self, buffer, extension):
-        object.__setattr__(self, 'start', datetime.datetime.now())
+        self.lcl['start'] = datetime.datetime.now()
 
         # buffer and extension are needed by select_engine
-        object.__setattr__(self, 'extension', extension)
-        object.__setattr__(self, 'buffer', buffer)
+        self.lcl['extension'] = extension
+        self.lcl['buffer'] = buffer
 
         # Now that we'll select the right engine, let's initialize it
-        context = object.__getattribute__(self, 'context')
-        engine = getattr(self, 'select_engine')()
-        context.request_handler.set_header('Engine', engine)
+        self.lcl['context'].request_handler.set_header(
+            'Engine',
+            self.select_engine()
+        )
 
-        super(Engine, self).__init__(context)
+        super(Engine, self).__init__(self.lcl['context'])
         super(Engine, self).load(buffer, extension)
 
     def __getattr__(self, name):
-        engine = getattr(self, 'select_engine')()
-
-        return getattr(object.__getattribute__(self, engine), name)
+        return getattr(self.lcl[self.select_engine()], name)
 
     def __delattr__(self, name):
-        engine = self.select_engine()
-        return delattr(object.__getattribute__(self, engine), name)
+        return delattr(self.lcl[self.select_engine()], name)
 
     def __setattr__(self, name, value):
-        engine = self.select_engine()
-        return setattr(object.__getattribute__(self, engine), name, value)
+        return setattr(self.lcl[self.select_engine()], name, value)
 
     # The following have to be redefined because their fallbacks in BaseEngine
     # don't have the right amount of parameters
+    # They call __getattr__ because the calls still need to be proxied
+    # (otherwise they would just loop back to their own definition right here)
     def create_image(self, buffer):
         return self.__getattr__('create_image')(buffer)
 
@@ -99,13 +105,20 @@ class Engine(BaseEngine):
         ret = self.__getattr__('read')(extension, quality)
 
         finish = datetime.datetime.now()
-        start = object.__getattribute__(self, 'start')
-        context = object.__getattribute__(self, 'context')
-        engine = getattr(self, 'select_engine')()
-        duration = (finish - start).total_seconds() * 1000
+        duration = int(
+            round(
+                (finish - self.lcl['start']).total_seconds() * 1000,
+                0
+            )
+        )
 
-        context.metrics.timing(
-            'engine.process_time.' + engine,
+        self.lcl['context'].metrics.timing(
+            'engine.process_time.' + self.select_engine(),
+            duration
+        )
+
+        self.lcl['context'].request_handler.set_header(
+            'ProcessingTime',
             duration
         )
 
