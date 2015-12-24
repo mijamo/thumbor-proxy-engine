@@ -40,6 +40,9 @@ class Engine(BaseEngine):
         self.lcl[module] = klass(context)
 
     def select_engine(self):
+        if self.lcl['selected_engine'] is not None:
+            return self.lcl['selected_engine']
+
         for enginename in self.lcl['engines']:
             engine = self.lcl[enginename]
             try:
@@ -47,6 +50,7 @@ class Engine(BaseEngine):
                     self.lcl['extension'],
                     self.lcl['buffer']
                 ):
+                    self.lcl['selected_engine'] = enginename
                     return enginename
 
             # Not implementing should_run means that the engine
@@ -54,6 +58,7 @@ class Engine(BaseEngine):
             # This is required for the stock PIL engine to act as a
             # fallback.
             except AttributeError:
+                self.lcl['selected_engine'] = enginename
                 return enginename
 
         raise Exception(
@@ -67,6 +72,7 @@ class Engine(BaseEngine):
         # buffer and extension are needed by select_engine
         self.lcl['extension'] = extension
         self.lcl['buffer'] = buffer
+        self.lcl['selected_engine'] = None
 
         # Now that we'll select the right engine, let's initialize it
         self.lcl['context'].request_handler.set_header(
