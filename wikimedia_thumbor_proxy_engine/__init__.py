@@ -83,7 +83,9 @@ class Engine(BaseEngine):
         super(Engine, self).__init__(self.lcl['context'])
         super(Engine, self).load(buffer, extension)
 
-    def __getattr__(self, name):
+    def __getattribute__(self, name):
+        if name in vars(Engine):
+            return object.__getattribute__(self, name)
         return getattr(self.lcl[self.select_engine()], name)
 
     def __delattr__(self, name):
@@ -91,19 +93,6 @@ class Engine(BaseEngine):
 
     def __setattr__(self, name, value):
         return setattr(self.lcl[self.select_engine()], name, value)
-
-    # The following have to be redefined because their fallbacks in BaseEngine
-    # don't have the right amount of parameters
-    # They call __getattr__ because the calls still need to be proxied
-    # (otherwise they would just loop back to their own definition right here)
-    def create_image(self, buffer):
-        return self.__getattr__('create_image')(buffer)
-
-    def crop(self, left, top, right, bottom):
-        return self.__getattr__('crop')(left, top, right, bottom)
-
-    def image_data_as_rgb(self, update_image=True):
-        return self.__getattr__('image_data_as_rgb')(update_image)
 
     # This is the exit point for requests, where the generated image is
     # converted to the target format
@@ -129,13 +118,3 @@ class Engine(BaseEngine):
         )
 
         return ret
-
-    def resize(self, width, height):
-        return self.__getattr__('resize')(width, height)
-
-    def set_image_data(self, data):
-        return self.__getattr__('set_image_data')(data)
-
-    @property
-    def size(self):
-        return self.__getattr__('size')
